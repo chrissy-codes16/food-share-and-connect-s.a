@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and role information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["retailer", "ngo", "admin"] },
+        "organizationId": { "type": "string", "description": "Reference to Organizations collection" },
+        "verified": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Organization": {
+      "title": "Organization",
+      "description": "Retailer or NGO entity details",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["retailer", "ngo"] },
+        "address": { "type": "string" },
+        "npoNumber": { "type": "string", "description": "NPO or Business registration number" },
+        "contactEmail": { "type": "string", "format": "email" },
+        "verified": { "type": "boolean" },
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          }
+        }
+      },
+      "required": ["name", "type", "address"]
+    },
+    "Donation": {
+      "title": "Donation",
+      "description": "Food surplus donation listing",
+      "type": "object",
+      "properties": {
+        "retailerId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "quantity": { "type": "number" },
+        "unit": { "type": "string" },
+        "expiryDate": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["available", "reserved", "picked_up"] },
+        "ngoId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["retailerId", "title", "quantity", "status"]
+    },
+    "Pickup": {
+      "title": "Pickup",
+      "description": "Handover record between retailer and NGO",
+      "type": "object",
+      "properties": {
+        "donationId": { "type": "string" },
+        "ngoId": { "type": "string" },
+        "retailerId": { "type": "string" },
+        "status": { "type": "string", "enum": ["scheduled", "completed"] },
+        "scheduledTime": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "verificationCode": { "type": "string" }
+      },
+      "required": ["donationId", "ngoId", "retailerId", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": { "schema": "User", "description": "User profiles" },
+    "/organizations/{orgId}": { "schema": "Organization", "description": "Organization details" },
+    "/donations/{donationId}": { "schema": "Donation", "description": "Food donation listings" },
+    "/pickups/{pickupId}": { "schema": "Pickup", "description": "Pickup records" }
+  }
+}

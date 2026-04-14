@@ -1,0 +1,166 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required, immutable) - Firebase Auth UID
+    //   - email: string (required, immutable) - User email
+    //   - displayName: string (optional) - User display name
+    //   - role: string (required, enum: ['retailer', 'ngo', 'admin']) - User role
+    //   - organizationId: string (optional) - Reference to organizations collection
+    //   - verified: bool (optional) - Verification status
+    //   - createdAt: timestamp (optional, immutable) - Creation time
+    //
+    // Collection: organizations
+    // Document ID: {orgId}
+    // Fields:
+    //   - name: string (required) - Organization name
+    //   - type: string (required, enum: ['retailer', 'ngo']) - Organization type
+    //   - address: string (required) - Physical address
+    //   - npoNumber: string (optional) - NPO or Business registration number
+    //   - contactEmail: string (required) - Contact email
+    //   - verified: bool (optional) - Verification status
+    //   - location: map (optional) - {lat: number, lng: number}
+    //
+    // Collection: donations
+    // Document ID: {donationId}
+    // Fields:
+    //   - retailerId: string (required, immutable) - Retailer UID
+    //   - title: string (required) - Donation title
+    //   - description: string (optional) - Donation description
+    //   - category: string (required) - Food category
+    //   - quantity: number (required, positive) - Quantity
+    //   - unit: string (required) - Unit of measure
+    //   - expiryDate: timestamp (required) - Expiry date
+    //   - status: string (required, enum: ['available', 'reserved', 'picked_up']) - Status
+    //   - ngoId: string (optional) - NGO UID that reserved/picked up
+    //   - createdAt: timestamp (required, immutable) - Creation time
+    //
+    // Collection: pickups
+    // Document ID: {pickupId}
+    // Fields:
+    //   - donationId: string (required, immutable) - Donation ID
+    //   - ngoId: string (required, immutable) - NGO UID
+    //   - retailerId: string (required, immutable) - Retailer UID
+    //   - status: string (required, enum: ['scheduled', 'completed']) - Pickup status
+    //   - scheduledTime: timestamp (required) - Scheduled time
+    //   - completedAt: timestamp (optional) - Completion time
+    //   - verificationCode: string (optional) - Handover verification code
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "christinankiere@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'role']) &&
+             data.uid == request.auth.uid &&
+             data.role in ['retailer', 'ngo', 'admin'] &&
+             isValidEmail(data.email) &&
+             (data.displayName == null || (data.displayName is string && data.displayName.size() < 100)) &&
+             (data.organizationId == null || data.organizationId is string);
+    }
+
+    function isValidOrganization(data) {
+      return hasRequiredFields(['name', 'type', 'address', 'contactEmail']) &&
+             data.type in ['retailer', 'ngo'] &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.address is string && data.address.size() > 0 && data.address.size() < 500 &&
+             isValidEmail(data.contactEmail);
+    }
+
+    function isValidDonation(data) {
+      return hasRequiredFields(['retailerId', 'title', 'category', 'quantity', 'unit', 'expiryDate', 'status']) &&
+             data.status in ['available', 'reserved', 'picked_up'] &&
+             data.quantity is number && data.quantity > 0 &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.retailerId is string;
+    }
+
+    function isValidPickup(data) {
+      return hasRequiredFields(['donationId', 'ngoId', 'retailerId', 'status', 'scheduledTime']) &&
+             data.status in ['scheduled', 'completed'] &&
+             data.donationId is string &&
+             data.ngoId is string &&
+             data.retailerId is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
+                      (request.resource.data.role != 'admin' || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && 
+                      (isOwner(userId) && request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    match /organizations/{orgId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidOrganization(request.resource.data);
+      allow update: if isAdmin() || (isAuthenticated() && isValidOrganization(request.resource.data));
+    }
+
+    match /donations/{donationId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidDonation(request.resource.data) && 
+                      request.resource.data.retailerId == request.auth.uid;
+      allow update: if isAuthenticated() && isValidDonation(request.resource.data) && 
+                      (request.resource.data.retailerId == resource.data.retailerId) &&
+                      (resource.data.retailerId == request.auth.uid || 
+                       request.resource.data.status == 'reserved' || 
+                       isAdmin());
+    }
+
+    match /pickups/{pickupId} {
+      allow read: if isAuthenticated() && (isOwner(resource.data.ngoId) || isOwner(resource.data.retailerId) || isAdmin());
+      allow create: if isAuthenticated() && isValidPickup(request.resource.data) && 
+                      (request.resource.data.ngoId == request.auth.uid || isAdmin());
+      allow update: if isAuthenticated() && isValidPickup(request.resource.data) && 
+                      (isOwner(resource.data.ngoId) || isOwner(resource.data.retailerId) || isAdmin());
+    }
+  }
+}

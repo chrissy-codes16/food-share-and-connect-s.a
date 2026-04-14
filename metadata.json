@@ -1,0 +1,5 @@
+{
+  "name": "FoodShare SA",
+  "description": "A digital platform connecting South African food donors with NGOs to reduce food waste and improve food security.",
+  "requestFramePermissions": ["camera", "geolocation"]
+}
